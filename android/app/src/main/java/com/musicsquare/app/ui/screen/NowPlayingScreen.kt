@@ -1,5 +1,6 @@
 package com.musicsquare.app.ui.screen
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -36,15 +37,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -60,9 +55,9 @@ import com.musicsquare.app.player.PlayerUiState
 import com.musicsquare.app.ui.DownloadUiState
 import com.musicsquare.app.ui.PlaybackExtras
 import com.musicsquare.app.ui.components.LyricsView
+import com.musicsquare.app.ui.components.PlayerSeekBar
 import com.musicsquare.app.ui.components.TrackRow
 import com.musicsquare.app.ui.i18n.LocalAppStrings
-import com.musicsquare.app.util.formatTimeMs
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -84,15 +79,19 @@ fun NowPlayingScreen(
     onPlayFromQueue: (Track) -> Unit,
 ) {
     val s = LocalAppStrings.current
-    val duration = playerState.durationMs.toFloat().coerceAtLeast(0f)
-    var scrubbing by remember { mutableFloatStateOf(Float.NaN) }
-    val sliderValue = if (!scrubbing.isNaN()) scrubbing else {
-        if (duration > 0f) (playerState.positionMs / duration).coerceIn(0f, 1f) else 0f
-    }
     val favored = extras.currentTrack?.uid?.let { it in extras.favoriteUids } == true
     val currentUid = extras.currentTrack?.uid
     val downloaded = currentUid != null && currentUid in downloadState.downloadedUids
     val downloading = currentUid != null && currentUid in downloadState.downloadingUids
+
+    // Now Playing is an overlay, not a Nav destination — intercept system Back.
+    BackHandler {
+        if (extras.showQueue) {
+            onCloseQueue()
+        } else {
+            onClose()
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -211,31 +210,16 @@ fun NowPlayingScreen(
                 overflow = TextOverflow.Ellipsis,
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-            Slider(
-                value = sliderValue,
-                onValueChange = { scrubbing = it },
-                onValueChangeFinished = {
-                    if (!scrubbing.isNaN() && duration > 0f) {
-                        onSeek((scrubbing * duration).toLong())
-                    }
-                    scrubbing = Float.NaN
-                },
-                colors = SliderDefaults.colors(
-                    thumbColor = MaterialTheme.colorScheme.primary,
-                    activeTrackColor = MaterialTheme.colorScheme.primary,
-                ),
-            )
-            Row(
+            PlayerSeekBar(
+                positionMs = playerState.positionMs,
+                durationMs = playerState.durationMs,
+                onSeek = onSeek,
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(formatTimeMs(playerState.positionMs), style = MaterialTheme.typography.labelSmall)
-                Text(formatTimeMs(playerState.durationMs), style = MaterialTheme.typography.labelSmall)
-            }
+            )
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             Row(
                 modifier = Modifier
