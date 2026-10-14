@@ -5,16 +5,15 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
@@ -29,25 +28,33 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.musicsquare.app.data.model.RecommendPlaylist
 import com.musicsquare.app.data.model.Track
 import com.musicsquare.app.ui.RecommendUiState
+import com.musicsquare.app.ui.i18n.LocalAppStrings
 
 @Composable
 fun RecommendSection(
     state: RecommendUiState,
     currentMediaId: String?,
     favoriteUids: Set<String>,
+    downloadedUids: Set<String>,
+    downloadingUids: Set<String>,
     onRefresh: () -> Unit,
     onPlayTrack: (Track) -> Unit,
     onToggleFavorite: (Track) -> Unit,
+    onDownloadTrack: (Track) -> Unit,
     onPlayPlaylist: (RecommendPlaylist) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val s = LocalAppStrings.current
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -55,18 +62,26 @@ fun RecommendSection(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "今日推荐",
+                    text = s.todayRecommend,
                     style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.primary,
                 )
                 Text(
-                    text = "热门歌曲与榜单歌单，点按即可播放",
+                    text = s.todayRecommendHint,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             IconButton(onClick = onRefresh, enabled = !state.isLoading) {
-                Icon(Icons.Default.Refresh, contentDescription = "刷新推荐")
+                if (state.isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                } else {
+                    Icon(Icons.Default.Refresh, contentDescription = s.refreshRecommend)
+                }
             }
         }
 
@@ -87,33 +102,42 @@ fun RecommendSection(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium,
                 )
-                TextButton(onClick = onRefresh) { Text("重新加载") }
+                TextButton(onClick = onRefresh) { Text(s.reload) }
             }
             else -> {
                 if (state.hotPlaylists.isNotEmpty()) {
-                    Text("热门歌单", style = MaterialTheme.typography.titleMedium)
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        contentPadding = PaddingValues(end = 4.dp),
+                    Text(s.hotPlaylists, style = MaterialTheme.typography.titleMedium)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        items(state.hotPlaylists, key = { it.id }) { playlist ->
+                        state.hotPlaylists.take(3).forEach { playlist ->
                             PlaylistCard(
                                 playlist = playlist,
+                                playLabel = s.playPlaylist,
                                 onClick = { onPlayPlaylist(playlist) },
+                                modifier = Modifier.weight(1f),
                             )
+                        }
+                        // Keep a stable 3-column grid when a batch has fewer items.
+                        repeat((3 - state.hotPlaylists.size).coerceAtLeast(0)) {
+                            Spacer(modifier = Modifier.weight(1f))
                         }
                     }
                 }
 
                 if (state.hotTracks.isNotEmpty()) {
-                    Text("热门歌曲", style = MaterialTheme.typography.titleMedium)
+                    Text(s.hotTracks, style = MaterialTheme.typography.titleMedium)
                     state.hotTracks.forEach { track ->
                         TrackRow(
                             track = track,
                             selected = currentMediaId == track.uid,
                             favored = track.uid in favoriteUids,
+                            downloaded = track.uid in downloadedUids,
+                            downloading = track.uid in downloadingUids,
                             onClick = { onPlayTrack(track) },
                             onToggleFavorite = { onToggleFavorite(track) },
+                            onDownload = { onDownloadTrack(track) },
                         )
                     }
                 }
@@ -125,59 +149,78 @@ fun RecommendSection(
 @Composable
 private fun PlaylistCard(
     playlist: RecommendPlaylist,
+    playLabel: String,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Column(
-        modifier = Modifier
-            .width(132.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.75f))
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))
             .clickable(onClick = onClick)
-            .padding(10.dp),
+            .padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Box {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.background),
+        ) {
             AsyncImage(
                 model = playlist.cover,
                 contentDescription = playlist.name,
                 contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+            Box(
                 modifier = Modifier
-                    .size(112.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.background),
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                Color.Black.copy(alpha = 0.55f),
+                            ),
+                            startY = 48f,
+                        ),
+                    ),
+            )
+            Text(
+                text = playlist.name,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 8.dp, end = 36.dp, bottom = 8.dp),
             )
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(6.dp)
-                    .size(28.dp)
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.92f)),
+                    .size(26.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.95f)),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     Icons.Default.PlayArrow,
-                    contentDescription = "播放歌单",
+                    contentDescription = playLabel,
                     tint = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.size(18.dp),
+                    modifier = Modifier.size(16.dp),
                 )
             }
         }
-        Spacer(modifier = Modifier.height(8.dp))
+        val tag = playlist.subtitle.substringAfter("· ").ifBlank { playlist.subtitle }
         Text(
-            text = playlist.name,
-            style = MaterialTheme.typography.titleSmall,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            text = if (playlist.trackCount > 0) {
-                "${playlist.subtitle} · ${playlist.trackCount} 首"
-            } else {
-                playlist.subtitle
-            },
+            text = if (playlist.trackCount > 0) "$tag · ${playlist.trackCount} 首" else tag,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 2,
+            maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
     }

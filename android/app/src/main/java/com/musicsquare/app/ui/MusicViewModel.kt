@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.musicsquare.app.data.local.AppSettings
+import com.musicsquare.app.data.local.DownloadRepository
 import com.musicsquare.app.data.local.LibraryRepository
 import com.musicsquare.app.data.local.SettingsRepository
 import com.musicsquare.app.data.model.MusicSourceId
@@ -16,6 +17,8 @@ import com.musicsquare.app.data.repo.MusicRepository
 import com.musicsquare.app.data.repo.RecommendRepository
 import com.musicsquare.app.player.PlayerController
 import com.musicsquare.app.player.PlayerUiState
+import com.musicsquare.app.ui.i18n.AppLanguage
+import com.musicsquare.app.ui.i18n.AppStrings
 import com.musicsquare.app.util.LrcParser
 import com.musicsquare.app.util.LyricLine
 import kotlinx.coroutines.Job
@@ -68,14 +71,22 @@ data class PlaybackExtras(
 data class LibraryUiState(
     val favorites: List<Track> = emptyList(),
     val playlists: List<StoredPlaylist> = emptyList(),
+    val downloads: List<Track> = emptyList(),
     val selectedPlaylistId: String? = null,
+    val showDownloads: Boolean = false,
 )
 
 data class RecommendUiState(
     val isLoading: Boolean = false,
     val hotTracks: List<Track> = emptyList(),
     val hotPlaylists: List<RecommendPlaylist> = emptyList(),
+    val batchIndex: Int = 0,
     val errorMessage: String? = null,
+)
+
+data class DownloadUiState(
+    val downloadedUids: Set<String> = emptySet(),
+    val downloadingUids: Set<String> = emptySet(),
 )
 
 class MusicViewModel(
@@ -84,6 +95,7 @@ class MusicViewModel(
     private val repository = MusicRepository()
     private val recommendRepository = RecommendRepository()
     private val libraryRepository = LibraryRepository(application.applicationContext)
+    private val downloadRepository = DownloadRepository(application.applicationContext)
     private val settingsRepository = SettingsRepository(application.applicationContext)
     private val playerController = PlayerController(application.applicationContext)
 
@@ -99,6 +111,9 @@ class MusicViewModel(
     private val _recommendState = MutableStateFlow(RecommendUiState())
     val recommendState: StateFlow<RecommendUiState> = _recommendState.asStateFlow()
 
+    private val _downloadState = MutableStateFlow(DownloadUiState())
+    val downloadState: StateFlow<DownloadUiState> = _downloadState.asStateFlow()
+
     val playerState: StateFlow<PlayerUiState> = playerController.state
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlayerUiState())
 
@@ -107,23 +122,36 @@ class MusicViewModel(
 
     private var progressJob: Job? = null
     private var queueResolveJob: Job? = null
+    private var recommendJob: Job? = null
     private val trackBag = linkedMapOf<String, Track>()
+    private var recommendTrackPool: List<Track> = emptyList()
+    private var recommendPlaylistPool: List<RecommendPlaylist> = emptyList()
+    private var recommendBatch: Int = 0
+    private var strings: AppStrings = AppStrings.forLanguage(AppLanguage.ZH)
 
     init {
         viewModelScope.launch {
             runCatching { playerController.connect() }
             libraryRepository.load()
+            downloadRepository.load()
             refreshLibraryUi()
+            refreshDownloadUi()
             startProgressTicker()
             loadRecommendations()
         }
         viewModelScope.launch {
             settingsRepository.settings.collect { settings ->
+                strings = AppStrings.forLanguage(settings.language)
                 _searchState.update { state ->
                     state.copy(
                         enabledSources = MusicSourceId.entries.associateWith { it in settings.enabledSources },
                         perSourceLimit = settings.perSourceLimit,
                         searchHistory = settings.searchHistory,
+                        statusMessage = if (state.results.isEmpty() && !state.isSearching) {
+                            strings.statusIdleSearch
+                        } else {
+                            state.statusMessage
+                        },
                     )
                 }
             }
@@ -170,26 +198,87 @@ class MusicViewModel(
     }
 
     fun loadRecommendations() {
-        viewModelScope.launch {
+        refreshRecommendations(forceReload = true)
+    }
+
+    /**
+     * 「换一批」：优先在已缓存的推荐池里轮换；池为空或强制刷新时重新拉取。
+     */
+    fun refreshRecommendations(forceReload: Boolean = false) {
+        recommendJob?.cancel()
+        recommendJob = viewModelScope.launch {
             _recommendState.update { it.copy(isLoading = true, errorMessage = null) }
-            val catalog = runCatching { recommendRepository.load() }
-                .getOrElse { RecommendCatalog() }
-            catalog.hotTracks.forEach { trackBag[it.uid] = it }
-            catalog.hotPlaylists.forEach { pl ->
-                pl.tracks.forEach { trackBag[it.uid] = it }
+            val poolEmpty = recommendTrackPool.isEmpty() || recommendPlaylistPool.isEmpty()
+            val periodicReload = !forceReload &&
+                !poolEmpty &&
+                recommendBatch > 0 &&
+                recommendBatch % RELOAD_EVERY_BATCHES == 0
+            val needReload = forceReload || poolEmpty || periodicReload
+
+            if (needReload) {
+                val catalog = runCatching { recommendRepository.loadPool() }
+                    .getOrElse { RecommendCatalog() }
+                recommendTrackPool = catalog.hotTracks
+                recommendPlaylistPool = catalog.hotPlaylists
+                catalog.hotTracks.forEach { trackBag[it.uid] = it }
+                catalog.hotPlaylists.forEach { pl ->
+                    pl.tracks.forEach { trackBag[it.uid] = it }
+                }
             }
+
+            recommendBatch = when {
+                forceReload || poolEmpty -> 0
+                else -> recommendBatch + 1
+            }
+
+            val hotTracks = nextWindow(recommendTrackPool, HOT_TRACK_BATCH, recommendBatch)
+            val hotPlaylists = nextPlaylistBatch(
+                recommendPlaylistPool,
+                PLAYLIST_BATCH,
+                recommendBatch,
+            )
             _recommendState.update {
                 it.copy(
                     isLoading = false,
-                    hotTracks = catalog.hotTracks,
-                    hotPlaylists = catalog.hotPlaylists,
-                    errorMessage = if (catalog.hotTracks.isEmpty() && catalog.hotPlaylists.isEmpty()) {
-                        "推荐内容暂时加载失败，请下拉或稍后重试"
+                    hotTracks = hotTracks,
+                    hotPlaylists = hotPlaylists,
+                    batchIndex = recommendBatch,
+                    errorMessage = if (hotTracks.isEmpty() && hotPlaylists.isEmpty()) {
+                        strings.recommendLoadFailed
                     } else {
                         null
                     },
                 )
             }
+        }
+    }
+
+    private fun <T> nextWindow(pool: List<T>, size: Int, batch: Int): List<T> {
+        if (pool.isEmpty()) return emptyList()
+        if (pool.size <= size) {
+            // Small pools still rotate order so refresh feels different.
+            val offset = batch % pool.size
+            return pool.drop(offset) + pool.take(offset)
+        }
+        val start = (batch * size) % pool.size
+        return List(size) { index -> pool[(start + index) % pool.size] }
+    }
+
+    private fun nextPlaylistBatch(
+        pool: List<RecommendPlaylist>,
+        size: Int,
+        batch: Int,
+    ): List<RecommendPlaylist> {
+        // Advance by a full page so every refresh replaces the whole row.
+        return nextWindow(pool, size, batch).mapIndexed { index, playlist ->
+            val tracks = playlist.tracks
+            if (tracks.isEmpty()) return@mapIndexed playlist
+            val coverIndex = (batch * size + index) % tracks.size
+            val rotated = tracks.drop(coverIndex) + tracks.take(coverIndex)
+            playlist.copy(
+                cover = rotated.firstOrNull()?.cover ?: playlist.cover,
+                tracks = rotated,
+            )
         }
     }
 
@@ -201,7 +290,7 @@ class MusicViewModel(
     fun playRecommendPlaylist(playlist: RecommendPlaylist) {
         viewModelScope.launch {
             _searchState.update {
-                it.copy(isPreparingPlay = true, statusMessage = "正在打开「${playlist.name}」…")
+                it.copy(isPreparingPlay = true, statusMessage = strings.loadingAudio)
             }
             val tracks = playlist.tracks.ifEmpty {
                 recommendRepository.loadPlaylistTracks(playlist.id)
@@ -212,8 +301,8 @@ class MusicViewModel(
                 _searchState.update {
                     it.copy(
                         isPreparingPlay = false,
-                        errorMessage = "歌单暂无可用歌曲",
-                        statusMessage = "打开歌单失败",
+                        errorMessage = strings.toastEmptyPlaylist,
+                        statusMessage = strings.toastEmptyPlaylist,
                     )
                 }
                 return@launch
@@ -233,11 +322,11 @@ class MusicViewModel(
         val keyword = _searchState.value.keyword.trim()
         val enabled = _searchState.value.enabledSources.filterValues { it }.keys
         if (keyword.isEmpty()) {
-            _searchState.update { it.copy(errorMessage = "请先输入搜索关键词") }
+            _searchState.update { it.copy(errorMessage = strings.toastNeedKeyword) }
             return
         }
         if (enabled.isEmpty()) {
-            _searchState.update { it.copy(errorMessage = "请至少选择一个音源") }
+            _searchState.update { it.copy(errorMessage = strings.searchSources) }
             return
         }
 
@@ -248,7 +337,7 @@ class MusicViewModel(
                     isSearching = reset,
                     isLoadingMore = !reset,
                     errorMessage = null,
-                    statusMessage = if (reset) "搜索中…" else "加载更多…",
+                    statusMessage = if (reset) strings.toastSearching else strings.toastLoadMore,
                     page = page,
                 )
             }
@@ -272,9 +361,13 @@ class MusicViewModel(
                     isLoadingMore = false,
                     results = results,
                     canLoadMore = added > 0,
-                    statusMessage = if (results.isEmpty()) "没有找到结果" else "共 ${results.size} 首",
-                    errorMessage = if (results.isEmpty() && reset) "未找到相关歌曲，请换个关键词试试" else null,
-                    toastMessage = if (!reset && added <= 0) "没有更多结果了" else null,
+                    statusMessage = if (results.isEmpty()) {
+                        strings.toastNoResults
+                    } else {
+                        strings.toastResultsCount(results.size)
+                    },
+                    errorMessage = if (results.isEmpty() && reset) strings.toastNoResults else null,
+                    toastMessage = if (!reset && added <= 0) strings.toastNoMore else null,
                 )
             }
         }
@@ -288,16 +381,16 @@ class MusicViewModel(
     fun playTrack(track: Track, queue: List<Track>? = null) {
         viewModelScope.launch {
             _searchState.update {
-                it.copy(isPreparingPlay = true, errorMessage = null, statusMessage = "正在加载音频…")
+                it.copy(isPreparingPlay = true, errorMessage = null, statusMessage = strings.loadingAudio)
             }
-            val playable = runCatching { repository.ensurePlayable(track) }.getOrElse { track }
+            val playable = resolvePlayable(track)
             trackBag[playable.uid] = playable
             if (playable.audioUrl.isNullOrBlank()) {
                 _searchState.update {
                     it.copy(
                         isPreparingPlay = false,
-                        errorMessage = "播放失败，无法获取音频地址",
-                        statusMessage = "播放失败",
+                        errorMessage = strings.toastPlayFail,
+                        statusMessage = strings.toastPlayFail,
                     )
                 }
                 return@launch
@@ -309,7 +402,7 @@ class MusicViewModel(
                 state.copy(
                     results = state.results.map { if (it.uid == playable.uid) playable else it },
                     isPreparingPlay = false,
-                    statusMessage = "正在播放：${playable.title}",
+                    statusMessage = strings.toastPlaying(playable.title),
                 )
             }
             _playbackExtras.update {
@@ -332,7 +425,7 @@ class MusicViewModel(
                         if (track.uid == currentUid && !track.audioUrl.isNullOrBlank()) {
                             track
                         } else {
-                            runCatching { repository.ensurePlayable(track) }.getOrElse { track }
+                            resolvePlayable(track)
                         }.also { trackBag[it.uid] = it }
                     }
                 }.awaitAll()
@@ -371,7 +464,78 @@ class MusicViewModel(
 
     fun cyclePlayMode() {
         val mode = playerController.cyclePlayMode()
-        toast("播放模式：${mode.label}")
+        toast(strings.toastPlayMode(strings.playModeLabel(mode)))
+    }
+
+    fun downloadTrack(track: Track? = _playbackExtras.value.currentTrack) {
+        if (track == null) return
+        if (downloadRepository.isDownloaded(track.uid)) {
+            toast(strings.toastDownloadExists)
+            return
+        }
+        if (track.uid in _downloadState.value.downloadingUids) return
+        viewModelScope.launch {
+            _downloadState.update { it.copy(downloadingUids = it.downloadingUids + track.uid) }
+            val playable = resolvePlayable(track)
+            trackBag[playable.uid] = playable
+            val url = playable.audioUrl
+            val result = if (url.isNullOrBlank()) {
+                Result.failure(IllegalStateException("no url"))
+            } else {
+                downloadRepository.download(playable, url)
+            }
+            _downloadState.update { it.copy(downloadingUids = it.downloadingUids - track.uid) }
+            refreshDownloadUi()
+            toast(if (result.isSuccess) strings.toastDownloadOk else strings.toastDownloadFail)
+        }
+    }
+
+    fun deleteDownload(uid: String) {
+        viewModelScope.launch {
+            downloadRepository.delete(uid)
+            refreshDownloadUi()
+            toast(strings.toastDeletedDownload)
+        }
+    }
+
+    fun clearDownloads() {
+        viewModelScope.launch {
+            downloadRepository.clearAll()
+            refreshDownloadUi()
+            toast(strings.toastDownloadsCleared)
+        }
+    }
+
+    fun playDownloads() {
+        val list = downloadRepository.asTracks()
+        val first = list.firstOrNull() ?: return
+        playTrack(first, list)
+    }
+
+    fun showDownloads(show: Boolean) {
+        _libraryState.update { it.copy(showDownloads = show, selectedPlaylistId = null) }
+    }
+
+    fun setLanguage(language: AppLanguage) {
+        viewModelScope.launch {
+            settingsRepository.setLanguage(language)
+            strings = AppStrings.forLanguage(language)
+            toast(
+                if (language == AppLanguage.ZH) {
+                    AppStrings.forLanguage(AppLanguage.ZH).languageZh
+                } else {
+                    AppStrings.forLanguage(AppLanguage.EN).languageEn
+                }
+            )
+        }
+    }
+
+    private suspend fun resolvePlayable(track: Track): Track {
+        val local = downloadRepository.localPath(track.uid)
+        if (local != null) {
+            return track.copy(audioUrl = local, detailsLoaded = true)
+        }
+        return runCatching { repository.ensurePlayable(track) }.getOrElse { track }
     }
 
     fun playFromQueue(track: Track) {
@@ -390,7 +554,7 @@ class MusicViewModel(
         viewModelScope.launch {
             val added = libraryRepository.toggleFavorite(track)
             refreshLibraryUi()
-            toast(if (added) "已加入收藏" else "已取消收藏")
+            toast(if (added) strings.toastAddedFavorite else strings.toastRemovedFavorite)
         }
     }
 
@@ -398,7 +562,7 @@ class MusicViewModel(
         viewModelScope.launch {
             libraryRepository.createPlaylist(name)
             refreshLibraryUi()
-            toast("歌单已创建")
+            toast(strings.toastPlaylistCreated)
         }
     }
 
@@ -409,7 +573,7 @@ class MusicViewModel(
                 it.copy(selectedPlaylistId = it.selectedPlaylistId?.takeIf { sid -> sid != id })
             }
             refreshLibraryUi()
-            toast("歌单已删除")
+            toast(strings.toastPlaylistDeleted)
         }
     }
 
@@ -421,7 +585,7 @@ class MusicViewModel(
     }
 
     fun selectPlaylist(id: String?) {
-        _libraryState.update { it.copy(selectedPlaylistId = id) }
+        _libraryState.update { it.copy(selectedPlaylistId = id, showDownloads = false) }
     }
 
     fun addCurrentToPlaylist(playlistId: String) {
@@ -429,7 +593,7 @@ class MusicViewModel(
         viewModelScope.launch {
             val added = libraryRepository.addToPlaylist(playlistId, track)
             refreshLibraryUi()
-            toast(if (added) "已加入歌单" else "歌单中已有该歌曲")
+            toast(if (added) strings.toastAddedToPlaylist else strings.toastAlreadyInPlaylist)
         }
     }
 
@@ -458,7 +622,7 @@ class MusicViewModel(
         viewModelScope.launch {
             val ok = libraryRepository.importJson(raw)
             refreshLibraryUi()
-            toast(if (ok) "导入完成" else "导入失败，请选择本应用导出的 JSON")
+            toast(if (ok) strings.toastImportOk else strings.toastImportFail)
         }
     }
 
@@ -470,14 +634,14 @@ class MusicViewModel(
     fun clearSearchHistory() {
         viewModelScope.launch {
             settingsRepository.clearSearchHistory()
-            toast("已清除搜索历史")
+            toast(strings.toastHistoryCleared)
         }
     }
 
     fun setPerSourceLimit(limit: Int) {
         viewModelScope.launch {
             settingsRepository.setPerSourceLimit(limit)
-            toast("每源结果数：$limit")
+            toast(strings.toastLimit(limit))
         }
     }
 
@@ -490,7 +654,7 @@ class MusicViewModel(
     fun clearAppCache() {
         viewModelScope.launch {
             settingsRepository.clearCacheFiles(getApplication())
-            toast("缓存已清理")
+            toast(strings.toastCacheCleared)
         }
     }
 
@@ -511,11 +675,20 @@ class MusicViewModel(
             it.copy(
                 favorites = libraryRepository.favorites(),
                 playlists = libraryRepository.playlists(),
+                downloads = downloadRepository.asTracks(),
             )
         }
         _playbackExtras.update {
             it.copy(favoriteUids = libraryRepository.favorites().map { t -> t.uid }.toSet())
         }
+    }
+
+    private fun refreshDownloadUi() {
+        val downloads = downloadRepository.asTracks()
+        _downloadState.update {
+            it.copy(downloadedUids = downloadRepository.downloadedUids())
+        }
+        _libraryState.update { it.copy(downloads = downloads) }
     }
 
     private fun startProgressTicker() {
@@ -531,7 +704,14 @@ class MusicViewModel(
     override fun onCleared() {
         progressJob?.cancel()
         queueResolveJob?.cancel()
+        recommendJob?.cancel()
         playerController.disconnect()
         super.onCleared()
+    }
+
+    companion object {
+        private const val HOT_TRACK_BATCH = 12
+        private const val PLAYLIST_BATCH = 3
+        private const val RELOAD_EVERY_BATCHES = 6
     }
 }

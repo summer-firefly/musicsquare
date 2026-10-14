@@ -5,6 +5,7 @@ import androidx.core.net.toUri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import com.musicsquare.app.data.model.Track
+import java.io.File
 
 object TrackMediaMapper {
     const val EXTRA_SOURCE = "source"
@@ -29,8 +30,19 @@ object TrackMediaMapper {
 
         return MediaItem.Builder()
             .setMediaId(track.uid)
-            .setUri(Uri.parse(audio))
+            .setUri(toPlayableUri(audio))
             .setMediaMetadata(metadata)
             .build()
+    }
+
+    private fun toPlayableUri(audio: String): Uri {
+        val lower = audio.lowercase()
+        return when {
+            lower.startsWith("http://") ||
+                lower.startsWith("https://") ||
+                lower.startsWith("file:") ||
+                lower.startsWith("content:") -> Uri.parse(audio)
+            else -> Uri.fromFile(File(audio))
+        }
     }
 }

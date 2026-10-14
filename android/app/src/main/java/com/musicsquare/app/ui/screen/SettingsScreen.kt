@@ -26,6 +26,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.musicsquare.app.data.local.AppSettings
 import com.musicsquare.app.data.model.MusicSourceId
+import com.musicsquare.app.ui.i18n.AppLanguage
+import com.musicsquare.app.ui.i18n.LocalAppStrings
 import kotlinx.coroutines.launch
 import java.nio.charset.Charset
 
@@ -33,13 +35,17 @@ import java.nio.charset.Charset
 @Composable
 fun SettingsScreen(
     settings: AppSettings,
+    downloadCount: Int,
     onToggleSource: (MusicSourceId) -> Unit,
     onSetLimit: (Int) -> Unit,
+    onSetLanguage: (AppLanguage) -> Unit,
     onClearHistory: () -> Unit,
     onClearCache: () -> Unit,
+    onClearDownloads: () -> Unit,
     onExport: suspend () -> String,
     onImport: (String) -> Unit,
 ) {
+    val s = LocalAppStrings.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -75,17 +81,34 @@ fun SettingsScreen(
     ) {
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "设置",
+            text = s.settingsTitle,
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.primary,
         )
         Text(
-            text = "默认音源、结果数与数据管理",
+            text = s.settingsSubtitle,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
-        Text("默认启用音源", style = MaterialTheme.typography.titleMedium)
+        Text(s.languageTitle, style = MaterialTheme.typography.titleMedium)
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            FilterChip(
+                selected = settings.language == AppLanguage.ZH,
+                onClick = { onSetLanguage(AppLanguage.ZH) },
+                label = { Text(s.languageZh) },
+            )
+            FilterChip(
+                selected = settings.language == AppLanguage.EN,
+                onClick = { onSetLanguage(AppLanguage.EN) },
+                label = { Text(s.languageEn) },
+            )
+        }
+
+        Text(s.defaultSources, style = MaterialTheme.typography.titleMedium)
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -94,12 +117,12 @@ fun SettingsScreen(
                 FilterChip(
                     selected = source in settings.enabledSources,
                     onClick = { onToggleSource(source) },
-                    label = { Text(source.label) },
+                    label = { Text(s.sourceLabel(source)) },
                 )
             }
         }
 
-        Text("每源搜索结果数：${settings.perSourceLimit}", style = MaterialTheme.typography.titleMedium)
+        Text(s.perSourceLimit(settings.perSourceLimit), style = MaterialTheme.typography.titleMedium)
         Slider(
             value = settings.perSourceLimit.toFloat(),
             onValueChange = { onSetLimit(it.toInt()) },
@@ -108,36 +131,54 @@ fun SettingsScreen(
             modifier = Modifier.fillMaxWidth(),
         )
 
-        Text("搜索历史", style = MaterialTheme.typography.titleMedium)
+        Text(s.searchHistory, style = MaterialTheme.typography.titleMedium)
         Text(
-            text = if (settings.searchHistory.isEmpty()) "暂无历史" else settings.searchHistory.joinToString(" · "),
+            text = if (settings.searchHistory.isEmpty()) {
+                s.noHistory
+            } else {
+                settings.searchHistory.joinToString(" · ")
+            },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         OutlinedButton(onClick = onClearHistory, modifier = Modifier.fillMaxWidth()) {
-            Text("清除搜索历史")
+            Text(s.clearSearchHistory)
         }
 
-        Text("歌单数据", style = MaterialTheme.typography.titleMedium)
-        Button(
-            onClick = { exportLauncher.launch("pikachu-music-playlists.json") },
+        Text(s.downloadsManage, style = MaterialTheme.typography.titleMedium)
+        Text(
+            text = s.downloadsCount(downloadCount),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedButton(
+            onClick = onClearDownloads,
+            enabled = downloadCount > 0,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text("导出收藏与歌单")
+            Text(s.clearDownloads)
+        }
+
+        Text(s.playlistData, style = MaterialTheme.typography.titleMedium)
+        Button(
+            onClick = { exportLauncher.launch("blue-music-playlists.json") },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(s.exportLibrary)
         }
         OutlinedButton(
             onClick = { importLauncher.launch(arrayOf("application/json", "text/*")) },
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text("导入收藏与歌单")
+            Text(s.importLibrary)
         }
 
         OutlinedButton(onClick = onClearCache, modifier = Modifier.fillMaxWidth()) {
-            Text("清除图片/缓存")
+            Text(s.clearCache)
         }
 
         Text(
-            text = "本应用仅作学习演示，音乐版权归各平台与原作者所有。",
+            text = s.copyrightNotice,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

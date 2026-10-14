@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.musicsquare.app.data.model.MusicSourceId
+import com.musicsquare.app.ui.i18n.AppLanguage
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -20,12 +21,14 @@ data class AppSettings(
     ),
     val perSourceLimit: Int = 10,
     val searchHistory: List<String> = emptyList(),
+    val language: AppLanguage = AppLanguage.ZH,
 )
 
 class SettingsRepository(private val context: Context) {
     private val sourcesKey = stringSetPreferencesKey("enabled_sources")
     private val limitKey = intPreferencesKey("per_source_limit")
     private val historyKey = stringPreferencesKey("search_history")
+    private val languageKey = stringPreferencesKey("app_language")
 
     val settings: Flow<AppSettings> = context.settingsDataStore.data.map { prefs ->
         val sourceIds = prefs[sourcesKey] ?: setOf("netease", "qq", "kuwo")
@@ -35,6 +38,7 @@ class SettingsRepository(private val context: Context) {
                 .ifEmpty { setOf(MusicSourceId.NETEASE, MusicSourceId.QQ, MusicSourceId.KUWO) },
             perSourceLimit = (prefs[limitKey] ?: 10).coerceIn(5, 30),
             searchHistory = historyRaw.split('\n').map { it.trim() }.filter { it.isNotEmpty() }.take(12),
+            language = AppLanguage.fromCode(prefs[languageKey]),
         )
     }
 
@@ -47,6 +51,12 @@ class SettingsRepository(private val context: Context) {
     suspend fun setPerSourceLimit(limit: Int) {
         context.settingsDataStore.edit { prefs ->
             prefs[limitKey] = limit.coerceIn(5, 30)
+        }
+    }
+
+    suspend fun setLanguage(language: AppLanguage) {
+        context.settingsDataStore.edit { prefs ->
+            prefs[languageKey] = language.code
         }
     }
 

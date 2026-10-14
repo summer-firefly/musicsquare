@@ -11,8 +11,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -28,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.musicsquare.app.data.model.MusicSourceId
 import com.musicsquare.app.data.model.Track
+import com.musicsquare.app.ui.i18n.LocalAppStrings
 
 @Composable
 fun TrackRow(
@@ -36,8 +41,13 @@ fun TrackRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     favored: Boolean = false,
+    downloaded: Boolean = false,
+    downloading: Boolean = false,
     onToggleFavorite: (() -> Unit)? = null,
+    onDownload: (() -> Unit)? = null,
+    downloadActionIsDelete: Boolean = false,
 ) {
+    val s = LocalAppStrings.current
     val bg = if (selected) {
         MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
     } else {
@@ -51,7 +61,7 @@ fun TrackRow(
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         AsyncImage(
             model = track.cover,
@@ -64,13 +74,13 @@ fun TrackRow(
         )
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = track.title.ifBlank { "未知歌曲" },
+                text = track.title.ifBlank { s.unknownTrack },
                 style = MaterialTheme.typography.titleSmall,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = track.artist.ifBlank { "未知歌手" },
+                text = track.artist.ifBlank { s.unknownArtist },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -78,12 +88,44 @@ fun TrackRow(
             )
         }
         SourceChip(source = track.source)
+        if (onDownload != null) {
+            IconButton(
+                onClick = onDownload,
+                enabled = !downloading && (!downloaded || downloadActionIsDelete),
+            ) {
+                when {
+                    downloading -> CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                    )
+                    downloadActionIsDelete -> Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = s.deleteDownload,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    downloaded -> Icon(
+                        imageVector = Icons.Default.DownloadDone,
+                        contentDescription = s.downloaded,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    else -> Icon(
+                        imageVector = Icons.Default.Download,
+                        contentDescription = s.download,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
         if (onToggleFavorite != null) {
             IconButton(onClick = onToggleFavorite) {
                 Icon(
                     imageVector = if (favored) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                    contentDescription = "收藏",
-                    tint = if (favored) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    contentDescription = s.favorite,
+                    tint = if (favored) {
+                        MaterialTheme.colorScheme.secondary
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
                 )
             }
         }
@@ -92,6 +134,7 @@ fun TrackRow(
 
 @Composable
 fun SourceChip(source: MusicSourceId) {
+    val s = LocalAppStrings.current
     val color = when (source) {
         MusicSourceId.NETEASE -> Color(0xFFFF6B6B)
         MusicSourceId.QQ -> Color(0xFF4DD0E1)
@@ -105,7 +148,7 @@ fun SourceChip(source: MusicSourceId) {
             .padding(horizontal = 10.dp, vertical = 4.dp),
     ) {
         Text(
-            text = source.label,
+            text = s.sourceLabel(source),
             color = color,
             style = MaterialTheme.typography.labelSmall,
         )

@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -28,6 +30,7 @@ import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -54,9 +57,11 @@ import coil.compose.AsyncImage
 import com.musicsquare.app.data.model.Track
 import com.musicsquare.app.player.PlayMode
 import com.musicsquare.app.player.PlayerUiState
+import com.musicsquare.app.ui.DownloadUiState
 import com.musicsquare.app.ui.PlaybackExtras
 import com.musicsquare.app.ui.components.LyricsView
 import com.musicsquare.app.ui.components.TrackRow
+import com.musicsquare.app.ui.i18n.LocalAppStrings
 import com.musicsquare.app.util.formatTimeMs
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -64,6 +69,7 @@ import com.musicsquare.app.util.formatTimeMs
 fun NowPlayingScreen(
     playerState: PlayerUiState,
     extras: PlaybackExtras,
+    downloadState: DownloadUiState,
     onClose: () -> Unit,
     onPlayPause: () -> Unit,
     onPrev: () -> Unit,
@@ -72,16 +78,21 @@ fun NowPlayingScreen(
     onCyclePlayMode: () -> Unit,
     onToggleCoverLyrics: () -> Unit,
     onToggleFavorite: () -> Unit,
+    onDownload: () -> Unit,
     onToggleQueue: () -> Unit,
     onCloseQueue: () -> Unit,
     onPlayFromQueue: (Track) -> Unit,
 ) {
+    val s = LocalAppStrings.current
     val duration = playerState.durationMs.toFloat().coerceAtLeast(0f)
     var scrubbing by remember { mutableFloatStateOf(Float.NaN) }
     val sliderValue = if (!scrubbing.isNaN()) scrubbing else {
         if (duration > 0f) (playerState.positionMs / duration).coerceIn(0f, 1f) else 0f
     }
     val favored = extras.currentTrack?.uid?.let { it in extras.favoriteUids } == true
+    val currentUid = extras.currentTrack?.uid
+    val downloaded = currentUid != null && currentUid in downloadState.downloadedUids
+    val downloading = currentUid != null && currentUid in downloadState.downloadingUids
 
     Box(
         modifier = Modifier
@@ -106,23 +117,41 @@ fun NowPlayingScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconButton(onClick = onClose) {
-                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = "收起")
+                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = s.collapse)
                 }
                 Text(
-                    text = "正在播放",
+                    text = s.nowPlaying,
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.weight(1f),
                     color = MaterialTheme.colorScheme.onBackground,
                 )
+                IconButton(onClick = onDownload, enabled = currentUid != null && !downloading) {
+                    when {
+                        downloading -> CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                        )
+                        downloaded -> Icon(
+                            Icons.Default.DownloadDone,
+                            contentDescription = s.downloaded,
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                        else -> Icon(
+                            Icons.Default.Download,
+                            contentDescription = s.download,
+                            tint = MaterialTheme.colorScheme.onBackground,
+                        )
+                    }
+                }
                 IconButton(onClick = onToggleFavorite) {
                     Icon(
                         imageVector = if (favored) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                        contentDescription = "收藏",
+                        contentDescription = s.favorite,
                         tint = if (favored) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onBackground,
                     )
                 }
                 IconButton(onClick = onToggleQueue) {
-                    Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = "播放队列")
+                    Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = s.queue)
                 }
             }
 
@@ -158,7 +187,7 @@ fun NowPlayingScreen(
             }
 
             Text(
-                text = if (extras.showCover) "点击封面查看歌词" else "点击歌词返回封面",
+                text = if (extras.showCover) s.tapCoverForLyrics else s.tapLyricsForCover,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
@@ -169,13 +198,13 @@ fun NowPlayingScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = playerState.title.ifBlank { extras.currentTrack?.title.orEmpty() }.ifBlank { "未知歌曲" },
+                text = playerState.title.ifBlank { extras.currentTrack?.title.orEmpty() }.ifBlank { s.unknownTrack },
                 style = MaterialTheme.typography.headlineSmall,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = playerState.artist.ifBlank { extras.currentTrack?.artist.orEmpty() }.ifBlank { "未知歌手" },
+                text = playerState.artist.ifBlank { extras.currentTrack?.artist.orEmpty() }.ifBlank { s.unknownArtist },
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -222,24 +251,24 @@ fun NowPlayingScreen(
                             PlayMode.SINGLE -> Icons.Default.RepeatOne
                             PlayMode.SHUFFLE -> Icons.Default.Shuffle
                         },
-                        contentDescription = playerState.playMode.label,
+                        contentDescription = s.playModeLabel(playerState.playMode),
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(28.dp),
                     )
                 }
                 IconButton(onClick = onPrev) {
-                    Icon(Icons.Default.SkipPrevious, contentDescription = "上一首", modifier = Modifier.size(40.dp))
+                    Icon(Icons.Default.SkipPrevious, contentDescription = s.previous, modifier = Modifier.size(40.dp))
                 }
                 IconButton(onClick = onPlayPause) {
                     Icon(
                         imageVector = if (playerState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = "播放/暂停",
+                        contentDescription = s.playPause,
                         tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(52.dp),
                     )
                 }
                 IconButton(onClick = onNext) {
-                    Icon(Icons.Default.SkipNext, contentDescription = "下一首", modifier = Modifier.size(40.dp))
+                    Icon(Icons.Default.SkipNext, contentDescription = s.next, modifier = Modifier.size(40.dp))
                 }
                 Box(modifier = Modifier.size(48.dp))
             }
@@ -254,7 +283,7 @@ fun NowPlayingScreen(
             containerColor = MaterialTheme.colorScheme.surface,
         ) {
             Text(
-                text = "当前队列（${extras.queue.size}）",
+                text = s.queueTitle(extras.queue.size),
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
             )
