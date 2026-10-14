@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.MusicSquare" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">#02030A</item>
+        <item name="android:navigationBarColor">#02030A</item>
+        <item name="android:windowBackground">#02030A</item>
+    </style>
+</resources>

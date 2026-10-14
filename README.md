@@ -1,49 +1,50 @@
-<p align="center">
-  <img src="docs/logo.png" alt="MusicSquare logo" width="640">
-</p>
+# MusicSquare
 
-<p align="center">
-  <strong>学习收获更多有趣的内容, 欢迎关注微信公众号：Charles的皮卡丘</strong>
-</p>
+Native Android music search & playback client (MVP).
 
-# 🌟 Overview
+Supports keyword search and in-app playback across Netease, QQ Music, Kuwo, and JOOX. Built with Kotlin, Jetpack Compose, and Media3.
 
-MusicSquare is a simple music search, download, and play website. 
-It provides a lightweight, browser-friendly interface to search, play, and download music directly from your GitHub Pages site.
+## Features (MVP)
 
-This GitHub Pages deployment is available at:
+- Multi-source search (Netease / QQ / Kuwo / JOOX)
+- Play / pause / previous / next
+- Background playback with media notification controls
+- Search results as the playback queue
 
-👉 **Live URL:** <https://charlespikachu.github.io/musicsquare/>
+## Requirements
 
+- JDK 17+
+- Android SDK (compileSdk 35, minSdk 26)
+- Android Studio Hedgehog+ or command-line Gradle
 
-## ✨ Key Features
+## Build & run
 
-- 🎵 **Online music search & playback**  
-  Supports searching songs by keyword and playing them directly in the browser.
+```bash
+cd android
+# first time: copy and edit SDK path
+cp local.properties.example local.properties
 
-- 📻 **Multiple music sources**  
-  Integrates online platforms such as Netease, Kuwo, JOOX and QQ.
+./gradlew :app:assembleDebug
+# or install to a connected device:
+./gradlew :app:installDebug
+```
 
-- 💛 **Cute & simple UI**  
-  A clean, playful interface themed around Pikachu and casual music listening.
+Debug APK:
 
+`android/app/build/outputs/apk/debug/app-debug.apk`
 
-## 🚀 How to Use
+## Project layout
 
-1. Open the live site:  
-   👉 <https://charlespikachu.github.io/musicsquare/>
+```
+android/
+├── app/src/main/java/com/musicsquare/app/
+│   ├── data/          # models, API sources, repository
+│   ├── player/        # Media3 playback service
+│   └── ui/            # Compose screens
+├── gradlew
+└── local.properties.example
+```
 
-2. Use the search box to input an artist name or song title (e.g., “周杰伦”).
+## License
 
-3. Click on a result to start playback and enjoy the music.
-
-
-## 💻 Development & Customization
-
-- This site is hosted via **GitHub Pages**.
-- You can customize:
-  - Theme (colors, background, icons)
-  - API endpoints (e.g., your own proxy/bridge server for Netease, Kuwo, JOOX and QQ.)
-  - Player behavior (autoplay, playlist, lyrics panel, etc.)
-
-For more details, check the source files in this repository and adjust the HTML / CSS / JavaScript as needed.
+Apache License 2.0. For learning/demo use only; music copyrights belong to the original platforms and rights holders.
