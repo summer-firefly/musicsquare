@@ -1,6 +1,8 @@
 # MusicSquare
 
-Native Android music search & playback client (MVP).
+[English](README.md) | [中文](README.zh-CN.md)
+
+Native Android music search & playback client.
 
 Supports keyword search and in-app playback across Netease, QQ Music, Kuwo, and JOOX. Built with Kotlin, Jetpack Compose, and Media3.
 
