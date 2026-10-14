@@ -41,15 +41,20 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.musicsquare.app.data.model.MusicSourceId
+import com.musicsquare.app.data.model.RecommendPlaylist
+import com.musicsquare.app.data.model.Track
 import com.musicsquare.app.player.PlayerUiState
 import com.musicsquare.app.ui.PlaybackExtras
+import com.musicsquare.app.ui.RecommendUiState
 import com.musicsquare.app.ui.SearchUiState
+import com.musicsquare.app.ui.components.RecommendSection
 import com.musicsquare.app.ui.components.TrackRow
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun DiscoverScreen(
     searchState: SearchUiState,
+    recommendState: RecommendUiState,
     playerState: PlayerUiState,
     extras: PlaybackExtras,
     onKeywordChange: (String) -> Unit,
@@ -57,191 +62,207 @@ fun DiscoverScreen(
     onLoadMore: () -> Unit,
     onToggleSource: (MusicSourceId) -> Unit,
     onToggleSourcesExpanded: () -> Unit,
-    onPlayTrack: (com.musicsquare.app.data.model.Track) -> Unit,
-    onToggleFavorite: (com.musicsquare.app.data.model.Track) -> Unit,
+    onPlayTrack: (Track) -> Unit,
+    onToggleFavorite: (Track) -> Unit,
     onHistoryClick: (String) -> Unit,
+    onRefreshRecommend: () -> Unit,
+    onPlayRecommendTrack: (Track) -> Unit,
+    onPlayRecommendPlaylist: (RecommendPlaylist) -> Unit,
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp),
-    ) {
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = "发现",
-            style = MaterialTheme.typography.headlineMedium,
-            color = MaterialTheme.colorScheme.primary,
-        )
-        Text(
-            text = "多源搜索 · 在线聚合",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Column(
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
             modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(20.dp))
-                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))
-                .padding(14.dp),
+                .fillMaxSize()
+                .padding(horizontal = 16.dp),
+            contentPadding = PaddingValues(bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                OutlinedTextField(
-                    value = searchState.keyword,
-                    onValueChange = onKeywordChange,
-                    modifier = Modifier.weight(1f),
-                    singleLine = true,
-                    placeholder = { Text("输入歌名 / 歌手") },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = { onSearch() }),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline,
-                    ),
-                )
-                Button(onClick = onSearch, enabled = !searchState.isSearching) {
-                    Text("搜索")
-                }
-            }
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(onClick = onToggleSourcesExpanded),
-            ) {
+            item {
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "音源筛选",
-                    style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier.weight(1f),
+                    text = "Blue Music",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.primary,
                 )
-                Icon(
-                    imageVector = if (searchState.sourcesExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    contentDescription = null,
+                Text(
+                    text = "发现好音乐 · 多源在线聚合",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
-            if (searchState.sourcesExpanded) {
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+            item {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    MusicSourceId.entries.forEach { source ->
-                        val selected = searchState.enabledSources[source] == true
-                        FilterChip(
-                            selected = selected,
-                            onClick = { onToggleSource(source) },
-                            label = { Text(source.label) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
-                                selectedLabelColor = MaterialTheme.colorScheme.primary,
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        OutlinedTextField(
+                            value = searchState.keyword,
+                            onValueChange = onKeywordChange,
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            placeholder = { Text("输入歌名 / 歌手") },
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardActions = KeyboardActions(onSearch = { onSearch() }),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outline,
                             ),
                         )
+                        Button(onClick = onSearch, enabled = !searchState.isSearching) {
+                            Text("搜索")
+                        }
                     }
-                }
-            }
 
-            if (searchState.searchHistory.isNotEmpty() && searchState.results.isEmpty()) {
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    searchState.searchHistory.take(6).forEach { item ->
-                        FilterChip(
-                            selected = false,
-                            onClick = { onHistoryClick(item) },
-                            label = { Text(item) },
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(onClick = onToggleSourcesExpanded),
+                    ) {
+                        Text(
+                            text = "音源筛选",
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Icon(
+                            imageVector = if (searchState.sourcesExpanded) {
+                                Icons.Default.ExpandLess
+                            } else {
+                                Icons.Default.ExpandMore
+                            },
+                            contentDescription = null,
                         )
                     }
-                }
-            }
 
-            Text(
-                text = searchState.statusMessage,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+                    if (searchState.sourcesExpanded) {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            MusicSourceId.entries.forEach { source ->
+                                val selected = searchState.enabledSources[source] == true
+                                FilterChip(
+                                    selected = selected,
+                                    onClick = { onToggleSource(source) },
+                                    label = { Text(source.label) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
+                                        selectedLabelColor = MaterialTheme.colorScheme.primary,
+                                    ),
+                                )
+                            }
+                        }
+                    }
 
-        Spacer(modifier = Modifier.height(12.dp))
+                    if (searchState.searchHistory.isNotEmpty() && searchState.results.isEmpty()) {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            searchState.searchHistory.take(6).forEach { item ->
+                                FilterChip(
+                                    selected = false,
+                                    onClick = { onHistoryClick(item) },
+                                    label = { Text(item) },
+                                )
+                            }
+                        }
+                    }
 
-        Box(modifier = Modifier.fillMaxSize()) {
-            when {
-                searchState.isSearching -> {
-                    CircularProgressIndicator(
-                        modifier = Modifier.align(Alignment.Center),
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
-                searchState.results.isEmpty() -> {
                     Text(
-                        text = "搜索结果会显示在这里",
-                        modifier = Modifier.align(Alignment.Center),
+                        text = searchState.statusMessage,
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                else -> {
-                    LazyColumn(
-                        contentPadding = PaddingValues(bottom = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
+            }
+
+            if (searchState.isSearching) {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(160.dp),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        items(searchState.results, key = { it.uid }) { track ->
-                            TrackRow(
-                                track = track,
-                                selected = playerState.currentMediaId == track.uid,
-                                favored = track.uid in extras.favoriteUids,
-                                onClick = { onPlayTrack(track) },
-                                onToggleFavorite = { onToggleFavorite(track) },
-                            )
-                        }
-                        item {
-                            if (searchState.canLoadMore) {
-                                OutlinedButton(
-                                    onClick = onLoadMore,
-                                    enabled = !searchState.isLoadingMore,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 8.dp),
-                                ) {
-                                    if (searchState.isLoadingMore) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(18.dp),
-                                            strokeWidth = 2.dp,
-                                        )
-                                    } else {
-                                        Text("加载更多")
-                                    }
-                                }
+                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            } else if (searchState.results.isNotEmpty()) {
+                item {
+                    Text("搜索结果", style = MaterialTheme.typography.titleMedium)
+                }
+                items(searchState.results, key = { it.uid }) { track ->
+                    TrackRow(
+                        track = track,
+                        selected = playerState.currentMediaId == track.uid,
+                        favored = track.uid in extras.favoriteUids,
+                        onClick = { onPlayTrack(track) },
+                        onToggleFavorite = { onToggleFavorite(track) },
+                    )
+                }
+                if (searchState.canLoadMore) {
+                    item {
+                        OutlinedButton(
+                            onClick = onLoadMore,
+                            enabled = !searchState.isLoadingMore,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                        ) {
+                            if (searchState.isLoadingMore) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                )
+                            } else {
+                                Text("加载更多")
                             }
                         }
                     }
                 }
+            } else {
+                item {
+                    RecommendSection(
+                        state = recommendState,
+                        currentMediaId = playerState.currentMediaId,
+                        favoriteUids = extras.favoriteUids,
+                        onRefresh = onRefreshRecommend,
+                        onPlayTrack = onPlayRecommendTrack,
+                        onToggleFavorite = onToggleFavorite,
+                        onPlayPlaylist = onPlayRecommendPlaylist,
+                    )
+                }
             }
+        }
 
-            if (searchState.isPreparingPlay) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 8.dp)
-                        .clip(RoundedCornerShape(999.dp))
-                        .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
-                        .padding(horizontal = 14.dp, vertical = 8.dp),
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(
-                            modifier = Modifier
-                                .size(16.dp)
-                                .padding(end = 8.dp),
-                            strokeWidth = 2.dp,
-                        )
-                        Text("正在加载音频…", style = MaterialTheme.typography.labelMedium)
-                    }
+        if (searchState.isPreparingPlay) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 8.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.92f))
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(
+                        modifier = Modifier
+                            .size(16.dp)
+                            .padding(end = 8.dp),
+                        strokeWidth = 2.dp,
+                    )
+                    Text("正在加载音频…", style = MaterialTheme.typography.labelMedium)
                 }
             }
         }

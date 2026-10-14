@@ -9,6 +9,7 @@ Supports keyword search and in-app playback across Netease, QQ Music, Kuwo, and 
 ## Features
 
 - Multi-source search (Netease / QQ / Kuwo / JOOX) with load-more
+- Home recommendations: hot songs and chart playlists (one-tap play)
 - Full-screen Now Playing, lyrics sync, play modes (list / single / shuffle)
 - Queue sheet, favorites, custom playlists (import/export JSON)
 - Bottom tabs: Discover / Library / Settings

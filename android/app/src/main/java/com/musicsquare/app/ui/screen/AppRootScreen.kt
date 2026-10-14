@@ -43,6 +43,7 @@ private object Routes {
 @Composable
 fun AppRootScreen(viewModel: MusicViewModel) {
     val searchState by viewModel.searchState.collectAsStateWithLifecycle()
+    val recommendState by viewModel.recommendState.collectAsStateWithLifecycle()
     val playerState by viewModel.playerState.collectAsStateWithLifecycle()
     val extras by viewModel.playbackExtras.collectAsStateWithLifecycle()
     val libraryState by viewModel.libraryState.collectAsStateWithLifecycle()
@@ -133,6 +134,7 @@ fun AppRootScreen(viewModel: MusicViewModel) {
                 composable(Routes.Discover) {
                     DiscoverScreen(
                         searchState = searchState,
+                        recommendState = recommendState,
                         playerState = playerState,
                         extras = extras,
                         onKeywordChange = viewModel::updateKeyword,
@@ -143,6 +145,9 @@ fun AppRootScreen(viewModel: MusicViewModel) {
                         onPlayTrack = { viewModel.playTrack(it) },
                         onToggleFavorite = { viewModel.toggleFavorite(it) },
                         onHistoryClick = viewModel::applyHistory,
+                        onRefreshRecommend = viewModel::loadRecommendations,
+                        onPlayRecommendTrack = viewModel::playRecommendTrack,
+                        onPlayRecommendPlaylist = viewModel::playRecommendPlaylist,
                     )
                 }
                 composable(Routes.Library) {

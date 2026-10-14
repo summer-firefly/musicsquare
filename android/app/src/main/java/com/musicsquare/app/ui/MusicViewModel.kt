@@ -7,11 +7,13 @@ import com.musicsquare.app.data.local.AppSettings
 import com.musicsquare.app.data.local.LibraryRepository
 import com.musicsquare.app.data.local.SettingsRepository
 import com.musicsquare.app.data.model.MusicSourceId
+import com.musicsquare.app.data.model.RecommendCatalog
+import com.musicsquare.app.data.model.RecommendPlaylist
 import com.musicsquare.app.data.model.StoredPlaylist
 import com.musicsquare.app.data.model.Track
 import com.musicsquare.app.data.model.toTrack
 import com.musicsquare.app.data.repo.MusicRepository
-import com.musicsquare.app.player.PlayMode
+import com.musicsquare.app.data.repo.RecommendRepository
 import com.musicsquare.app.player.PlayerController
 import com.musicsquare.app.player.PlayerUiState
 import com.musicsquare.app.util.LrcParser
@@ -69,10 +71,18 @@ data class LibraryUiState(
     val selectedPlaylistId: String? = null,
 )
 
+data class RecommendUiState(
+    val isLoading: Boolean = false,
+    val hotTracks: List<Track> = emptyList(),
+    val hotPlaylists: List<RecommendPlaylist> = emptyList(),
+    val errorMessage: String? = null,
+)
+
 class MusicViewModel(
     application: Application,
 ) : AndroidViewModel(application) {
     private val repository = MusicRepository()
+    private val recommendRepository = RecommendRepository()
     private val libraryRepository = LibraryRepository(application.applicationContext)
     private val settingsRepository = SettingsRepository(application.applicationContext)
     private val playerController = PlayerController(application.applicationContext)
@@ -85,6 +95,9 @@ class MusicViewModel(
 
     private val _libraryState = MutableStateFlow(LibraryUiState())
     val libraryState: StateFlow<LibraryUiState> = _libraryState.asStateFlow()
+
+    private val _recommendState = MutableStateFlow(RecommendUiState())
+    val recommendState: StateFlow<RecommendUiState> = _recommendState.asStateFlow()
 
     val playerState: StateFlow<PlayerUiState> = playerController.state
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlayerUiState())
@@ -102,6 +115,7 @@ class MusicViewModel(
             libraryRepository.load()
             refreshLibraryUi()
             startProgressTicker()
+            loadRecommendations()
         }
         viewModelScope.launch {
             settingsRepository.settings.collect { settings ->
@@ -153,6 +167,66 @@ class MusicViewModel(
 
     fun toggleSourcesExpanded() {
         _searchState.update { it.copy(sourcesExpanded = !it.sourcesExpanded) }
+    }
+
+    fun loadRecommendations() {
+        viewModelScope.launch {
+            _recommendState.update { it.copy(isLoading = true, errorMessage = null) }
+            val catalog = runCatching { recommendRepository.load() }
+                .getOrElse { RecommendCatalog() }
+            catalog.hotTracks.forEach { trackBag[it.uid] = it }
+            catalog.hotPlaylists.forEach { pl ->
+                pl.tracks.forEach { trackBag[it.uid] = it }
+            }
+            _recommendState.update {
+                it.copy(
+                    isLoading = false,
+                    hotTracks = catalog.hotTracks,
+                    hotPlaylists = catalog.hotPlaylists,
+                    errorMessage = if (catalog.hotTracks.isEmpty() && catalog.hotPlaylists.isEmpty()) {
+                        "推荐内容暂时加载失败，请下拉或稍后重试"
+                    } else {
+                        null
+                    },
+                )
+            }
+        }
+    }
+
+    fun playRecommendTrack(track: Track) {
+        val queue = _recommendState.value.hotTracks.ifEmpty { listOf(track) }
+        playTrack(track, queue)
+    }
+
+    fun playRecommendPlaylist(playlist: RecommendPlaylist) {
+        viewModelScope.launch {
+            _searchState.update {
+                it.copy(isPreparingPlay = true, statusMessage = "正在打开「${playlist.name}」…")
+            }
+            val tracks = playlist.tracks.ifEmpty {
+                recommendRepository.loadPlaylistTracks(playlist.id)
+            }
+            tracks.forEach { trackBag[it.uid] = it }
+            val first = tracks.firstOrNull()
+            if (first == null) {
+                _searchState.update {
+                    it.copy(
+                        isPreparingPlay = false,
+                        errorMessage = "歌单暂无可用歌曲",
+                        statusMessage = "打开歌单失败",
+                    )
+                }
+                return@launch
+            }
+            _recommendState.update { state ->
+                state.copy(
+                    hotPlaylists = state.hotPlaylists.map {
+                        if (it.id == playlist.id) it.copy(tracks = tracks, trackCount = tracks.size) else it
+                    }
+                )
+            }
+            playTrack(first, tracks)
+        }
     }
 
     fun search(reset: Boolean = true) {

@@ -13,7 +13,7 @@ object HttpClientProvider {
             .followSslRedirects(true)
             .addInterceptor { chain ->
                 val request = chain.request().newBuilder()
-                    .header("User-Agent", "MusicSquareAndroid/1.0")
+                    .header("User-Agent", "BlueMusicAndroid/1.0")
                     .header("Referer", "")
                     .build()
                 chain.proceed(request)

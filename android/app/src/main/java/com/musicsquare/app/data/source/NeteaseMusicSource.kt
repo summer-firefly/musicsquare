@@ -12,6 +12,7 @@ import com.musicsquare.app.util.strOrNull
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
 
@@ -22,29 +23,17 @@ class NeteaseMusicSource(
     override suspend fun search(keyword: String, limit: Int, page: Int): List<Track> =
         withContext(Dispatchers.IO) {
             val requestLimit = (page.coerceAtLeast(1) * limit.coerceAtLeast(1))
-            val url = "https://api.qijieya.cn/meting/?type=search&id=${keyword.encode()}&limit=$requestLimit&server=netease"
-            val body = getBody(url) ?: return@withContext emptyList()
-            val array = runCatching { AppJson.parseToJsonElement(body).asArrayOrNull() }.getOrNull()
-                ?: return@withContext emptyList()
+            val url =
+                "https://api.qijieya.cn/meting/?type=search&id=${keyword.encode()}&limit=$requestLimit&server=netease"
+            parseTrackList(getBody(url), keywordFallback = keyword)
+        }
 
-            array.mapIndexedNotNull { idx, element ->
-                val obj = element.asObjectOrNull() ?: return@mapIndexedNotNull null
-                val audioUrl = obj.strOrNull("url")
-                val songId = pickQueryParam(audioUrl, "id").ifBlank { "$keyword-${idx + 1}" }
-                val uid = "netease-$songId"
-                Track(
-                    uid = uid,
-                    source = MusicSourceId.NETEASE,
-                    displayIndex = idx + 1,
-                    keyword = keyword,
-                    songId = songId,
-                    title = obj.str("name"),
-                    artist = obj.str("artist"),
-                    cover = obj.strOrNull("pic"),
-                    audioUrl = audioUrl,
-                    lrcUrl = obj.strOrNull("lrc"),
-                )
-            }
+    suspend fun fetchPlaylist(playlistId: String, limit: Int = 30): List<Track> =
+        withContext(Dispatchers.IO) {
+            val url =
+                "https://api.qijieya.cn/meting/?type=playlist&id=${playlistId.encode()}&server=netease"
+            parseTrackList(getBody(url), keywordFallback = "playlist:$playlistId")
+                .take(limit.coerceAtLeast(1))
         }
 
     override suspend fun fetchDetails(track: Track): Track = withContext(Dispatchers.IO) {
@@ -78,6 +67,29 @@ class NeteaseMusicSource(
         updated.copy(detailsLoaded = true)
     }
 
+    private fun parseTrackList(body: String?, keywordFallback: String): List<Track> {
+        if (body.isNullOrBlank()) return emptyList()
+        val array = runCatching { AppJson.parseToJsonElement(body).asArrayOrNull() }.getOrNull()
+            ?: return emptyList()
+        return array.mapIndexedNotNull { idx, element ->
+            val obj = element.asObjectOrNull() ?: return@mapIndexedNotNull null
+            val audioUrl = obj.strOrNull("url")
+            val songId = pickQueryParam(audioUrl, "id").ifBlank { "$keywordFallback-${idx + 1}" }
+            Track(
+                uid = "netease-$songId",
+                source = MusicSourceId.NETEASE,
+                displayIndex = idx + 1,
+                keyword = keywordFallback,
+                songId = songId,
+                title = obj.str("name"),
+                artist = obj.str("artist"),
+                cover = obj.strOrNull("pic"),
+                audioUrl = audioUrl,
+                lrcUrl = obj.strOrNull("lrc"),
+            )
+        }
+    }
+
     private fun parseLyricPayload(body: String): String? {
         val trimmed = body.trim()
         if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return trimmed
@@ -89,7 +101,7 @@ class NeteaseMusicSource(
                     val obj = element.asObjectOrNull() ?: return@runCatching null
                     obj.strOrNull("lrc", "lyric")
                         ?: obj["data"]?.asObjectOrNull()?.strOrNull("lrc", "lyric")
-                        ?: obj["data"]?.let { if (it is kotlinx.serialization.json.JsonPrimitive) it.content else null }
+                        ?: obj["data"]?.let { if (it is JsonPrimitive) it.content else null }
                 }
             }
         }.getOrNull() ?: trimmed.takeIf { it.contains('[') }
