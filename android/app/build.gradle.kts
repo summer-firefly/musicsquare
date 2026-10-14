@@ -14,7 +14,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = 1
-        versionName = "1.0.0-mvp"
+        versionName = "1.1.0"
 
         buildConfigField("String", "JOOX_TOKEN", "\"f84ao9lMF_q7husBWRfgUw\"")
         buildConfigField("int", "JOOX_BR", "4")
@@ -76,4 +76,6 @@ dependencies {
 
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("androidx.core:core-ktx:1.15.0")
+    implementation("androidx.navigation:navigation-compose:2.8.4")
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
 }

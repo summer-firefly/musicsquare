@@ -12,7 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import com.musicsquare.app.ui.MusicViewModel
-import com.musicsquare.app.ui.screen.HomeScreen
+import com.musicsquare.app.ui.screen.AppRootScreen
 import com.musicsquare.app.ui.theme.MusicSquareTheme
 
 class MainActivity : ComponentActivity() {
@@ -31,7 +31,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             MusicSquareTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    HomeScreen(viewModel = viewModel)
+                    AppRootScreen(viewModel = viewModel)
                 }
             }
         }

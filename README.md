@@ -4,12 +4,13 @@ Native Android music search & playback client (MVP).
 
 Supports keyword search and in-app playback across Netease, QQ Music, Kuwo, and JOOX. Built with Kotlin, Jetpack Compose, and Media3.
 
-## Features (MVP)
+## Features
 
-- Multi-source search (Netease / QQ / Kuwo / JOOX)
-- Play / pause / previous / next
+- Multi-source search (Netease / QQ / Kuwo / JOOX) with load-more
+- Full-screen Now Playing, lyrics sync, play modes (list / single / shuffle)
+- Queue sheet, favorites, custom playlists (import/export JSON)
+- Bottom tabs: Discover / Library / Settings
 - Background playback with media notification controls
-- Search results as the playback queue
 
 ## Requirements
 

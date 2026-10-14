@@ -3,9 +3,11 @@ package com.musicsquare.app.ui.components
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -13,18 +15,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,69 +30,80 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.musicsquare.app.player.PlayerUiState
-import java.util.Locale
-import kotlin.math.max
 
 @Composable
 fun PlayerBar(
     state: PlayerUiState,
-    expanded: Boolean,
-    onToggleExpanded: () -> Unit,
+    preparing: Boolean,
+    onOpenNowPlaying: () -> Unit,
     onPlayPause: () -> Unit,
-    onPrev: () -> Unit,
     onNext: () -> Unit,
-    onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    if (state.currentMediaId.isNullOrBlank() && state.title.isBlank()) return
+    if (state.currentMediaId.isNullOrBlank() && state.title.isBlank() && !preparing) return
 
-    val duration = max(state.durationMs, 0L).toFloat()
-    val position = state.positionMs.coerceAtLeast(0L).toFloat()
-    var scrubbing by remember { mutableFloatStateOf(Float.NaN) }
-    val sliderValue = if (!scrubbing.isNaN()) scrubbing else {
-        if (duration > 0f) (position / duration).coerceIn(0f, 1f) else 0f
+    val progress = if (state.durationMs > 0) {
+        (state.positionMs.toFloat() / state.durationMs.toFloat()).coerceIn(0f, 1f)
+    } else {
+        0f
     }
 
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
-            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.96f))
-            .clickable(onClick = onToggleExpanded)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))
+            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.97f))
+            .clickable(onClick = onOpenNowPlaying),
     ) {
+        LinearProgressIndicator(
+            progress = { progress },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(2.dp),
+            color = MaterialTheme.colorScheme.primary,
+            trackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
+        )
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
         ) {
-            AsyncImage(
-                model = state.artworkUri,
-                contentDescription = state.title,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier
-                    .size(if (expanded) 72.dp else 48.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.background),
-            )
+            Box {
+                AsyncImage(
+                    model = state.artworkUri,
+                    contentDescription = state.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(MaterialTheme.colorScheme.background),
+                )
+                if (preparing || state.isBuffering) {
+                    CircularProgressIndicator(
+                        modifier = Modifier
+                            .size(22.dp)
+                            .align(Alignment.Center),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = state.title.ifBlank { "未在播放" },
+                    text = state.title.ifBlank { if (preparing) "正在加载…" else "未在播放" },
                     style = MaterialTheme.typography.titleSmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = state.artist.ifBlank { "—" },
+                    text = state.artist.ifBlank { "点击查看播放页" },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-            }
-            IconButton(onClick = onPrev) {
-                Icon(Icons.Default.SkipPrevious, contentDescription = "上一首")
             }
             IconButton(onClick = onPlayPause) {
                 Icon(
@@ -108,45 +116,5 @@ fun PlayerBar(
                 Icon(Icons.Default.SkipNext, contentDescription = "下一首")
             }
         }
-
-        if (expanded) {
-            Slider(
-                value = sliderValue,
-                onValueChange = { scrubbing = it },
-                onValueChangeFinished = {
-                    if (!scrubbing.isNaN() && duration > 0f) {
-                        onSeek((scrubbing * duration).toLong())
-                    }
-                    scrubbing = Float.NaN
-                },
-                colors = SliderDefaults.colors(
-                    thumbColor = MaterialTheme.colorScheme.primary,
-                    activeTrackColor = MaterialTheme.colorScheme.primary,
-                ),
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(
-                    text = formatTime(state.positionMs),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    text = formatTime(state.durationMs),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
     }
-}
-
-private fun formatTime(ms: Long): String {
-    if (ms <= 0L) return "00:00"
-    val totalSec = ms / 1000
-    val m = totalSec / 60
-    val s = totalSec % 60
-    return String.format(Locale.US, "%02d:%02d", m, s)
 }

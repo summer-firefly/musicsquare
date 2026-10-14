@@ -10,6 +10,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -30,6 +35,8 @@ fun TrackRow(
     selected: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    favored: Boolean = false,
+    onToggleFavorite: (() -> Unit)? = null,
 ) {
     val bg = if (selected) {
         MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
@@ -71,6 +78,15 @@ fun TrackRow(
             )
         }
         SourceChip(source = track.source)
+        if (onToggleFavorite != null) {
+            IconButton(onClick = onToggleFavorite) {
+                Icon(
+                    imageVector = if (favored) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                    contentDescription = "收藏",
+                    tint = if (favored) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
     }
 }
 
